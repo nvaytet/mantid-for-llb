@@ -30,8 +30,8 @@ def createWorkspace(data_x, data_y, data_e, n_spec, unit=None):
      return alg.getProperty("OutputWorkspace").value
 
 
-# Load the XML data file
-data = read_xml.load(filename="Powder_HoTi_014704.xml")
+# Load the XML data file as a list of frames
+frames = read_xml.load(filename="Powder_HoTi_014704.xml")
 
 # The final workspace
 final = None
@@ -44,17 +44,17 @@ dsp = np.zeros([len(bins) - 1])
 fig = plt.figure()
 
 # Loop over all frames
-for i in range(data.nz):
+for i, f in enumerate(frames):
 
     print("=========================================")
-    print("{}/{}".format(i, data.nz))
+    print("{}/{}".format(i, len(frames)))
     print("=========================================")
 
     # Create workspace for current frame
-    ws_for_this_frame = createWorkspace(data_x=[data.wavelength],
-                                        data_y=data.Iup[i,:,:],
-                                        data_e=np.sqrt(data.Iup[i,:,:]),
-                                        n_spec=data.nx*data.ny,
+    ws_for_this_frame = createWorkspace(data_x=[f.wavelength],
+                                        data_y=f.IntensityUp,
+                                        data_e=np.sqrt(f.IntensityUp),
+                                        n_spec=f.x*f.y,
                                         unit="Wavelength")
     # Register the workspace in the mantid ADS
     mantid.mtd.addOrReplace("ws_for_this_frame", ws_for_this_frame)
@@ -63,18 +63,18 @@ for i in range(data.nz):
                           RewriteSpectraMap=True)
     # Rotate the instrument to the current gamma angle (in degrees)
     mantid.RotateInstrumentComponent(ws_for_this_frame, "detector_panel",
-                                     X=0, Y=1, Z=0, Angle=data.Gamma[i],
+                                     X=0, Y=1, Z=0, Angle=f.Gamma,
                                      RelativeRotation=False)
     # Normalise by monitor counts
-    normalised = ws_for_this_frame / data.monitor_counts[i]
+    normalised = ws_for_this_frame / f.totalmonitorcount
     # Convert to d-spacing
     dspacing = mantid.ConvertUnits(InputWorkspace=normalised,
                                    Target="dSpacing", EMode="Elastic")
 
     # 1. Naive accumulation of workspace data: this does not seem to work
-    rebinned = Rebin(dspacing, "0.5,0.01,5.0")
+    rebinned = mantid.Rebin(dspacing, "0.5,0.01,5.0")
     if final is None:
-        final = CloneWorkspace(rebinned)
+        final = mantid.CloneWorkspace(rebinned)
     else:
         final += rebinned
 

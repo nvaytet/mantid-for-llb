@@ -14,91 +14,84 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-class XMLData():
+def text_to_value(val, key=""):
     """
-    Class to hold the data stored in the LLB xml format.
+    If key is x, y or z, convert to int.
+    Else, we try to convert to float.
+    If that fails, we simply return the string.
     """
-    def __init__(self, Iup, Idn, Phi, Omega, Gamma, monitor_counts, wavelength,
-                 nx, ny, nz):
-        self.Iup = Iup
-        self.Idn = Idn
-        self.Phi = Phi
-        self.Omega = Omega
-        self.Gamma = Gamma
-        self.monitor_counts = monitor_counts
-        self.wavelength = wavelength
-        self.nx = nx
-        self.ny = ny
-        self.nz = nz
+    possibles = ["x", "y", "z"]
+    if key in possibles:
+        out = int(val)
+    else:
+        # Try to convert to float
+        try:
+            out = float(val)
+        except ValueError:
+            out = val
+    return out
+
+
+class XMLFrame():
+    """
+    Class to hold the data stored in the LLB xml Frame format.
+    We attempt to store values as floats where possible.
+    """
+    def __init__(self, frame, wavelength=0.0):
+        # Start by setting the wavelength
+        setattr(self, "wavelength", wavelength)
+        # Then iterate through all the frame elements
+        for el in frame.iter():
+            # First get the metadata from dict items
+            if len(el.keys()) > 0:
+                for key, val in el.items():
+                    setattr(self, key, text_to_value(val, key))
+            # Then, read in the "text" contained inside each element
+            if el.text is not None:
+                if el.tag == "Data":
+                    data = np.array(el.text.split(';'),
+                                    dtype=np.int32).reshape(self.y, self.x)
+                    setattr(self, self.name, data)
+                else:
+                    data = text_to_value(el.text)
+                    setattr(self, el.tag, data)
         return
 
 
 def load(filename=""):
     """
     Load a XML file and return a XMLData object.
-    The information read is:
-    - Iup: the "up" intensity (counts): a 3D numpy array [nz, ny, nx]
-    - Idn: the "down" intensity (counts): a 3D numpy array [nz, ny, nx]
-    - Phi: the "phi" angle for all the frames: a 1D numpy array [nz]
-    - Omega: the "omega" angle for all the frames: a 1D numpy array [nz]
-    - Gamma: the "gamma" detector rotation angle for all the frames: a 1D numpy array [nz]
-    - monitor_counts: the counts recorded by the monitor for each frame: a 1D numpy array [nz]
-    - wavelength: the wavelength for the current measurement: a float (applies to all frames)
-    - nx: number of pixels in the "x" direction: an integer (applies to all frames)
-    - ny: number of pixels in the "y" direction: an integer (applies to all frames)
-    - nz: number of frames: an integer
+    We attempt to load all the data contained in the XML file.
     """
 
     tree = et.parse(filename)
     root = tree.getroot()
-    wavelength = float(root[1].text)
+    wavelength = float(root.findtext("wavelenght"))
 
-    jstart = 2
+    frame_list = [ XMLFrame(f, wavelength) for f in root.iter("Frame") ]
 
-    # Get pixel numbers
-    nx = int(root[jstart][6].attrib["x"])
-    ny = int(root[jstart][6].attrib["y"])
-    nz = len(root) - jstart
-
-    # Allocate arrays
-    Iup = np.zeros([nz, ny, nx])
-    Idn = np.zeros([nz, ny, nx])
-
-    Phi = np.zeros([nz])
-    Omega = np.zeros([nz])
-    Gamma = np.zeros([nz])
-    monitor_counts = np.zeros([nz])
-
-    for i in range(jstart, len(root)):
-        Iup[i - jstart, :, :] += np.array(root[i][5].text.split(';'),
-                                          dtype=np.int32).reshape(ny, nx)
-        Idn[i - jstart, :, :] += np.array(root[i][6].text.split(';'),
-                                          dtype=np.int32).reshape(ny, nx)
-        Phi[i - jstart] = np.float(root[i][4][0].text)
-        Omega[i - jstart] = np.float(root[i][4][1].text)
-        Gamma[i - jstart] = np.float(root[i][4][2].text)
-        monitor_counts[i - jstart] = np.float(root[i][3][2].text)
-
-    return XMLData(Iup, Idn, Phi, Omega, Gamma, monitor_counts, wavelength, nx,
-                   ny, nz)
+    return frame_list
 
 
-def plot(data, n=0, filename="plot.pdf"):
+def plot(frame, filename="plot.pdf", fields=["IntensityUp", "IntensityDown"],
+         log=True):
     """
-    Plot the data for Iup and Idn as a 2D image for a given frame number n,
-    and save figure as pdf file.
+    Plot the data for Iup and Idown as a 2D image for a given frame,
+    and save figure to file.
     """
 
     fig = plt.figure()
     aspect = 25.0/80./4.0
-    ax1 = fig.add_subplot(211)
-    im1 = ax1.imshow(np.log10(data.Iup[n, :, :]).T, aspect=aspect,
-                     origin="lower")
-    cb1 = plt.colorbar(im1)
-    ax2 = fig.add_subplot(212)
-    im2 = ax2.imshow(np.log10(data.Idn[n, :, :]).T, aspect=aspect,
-                     origin="lower")
-    cb2 = plt.colorbar(im2)
-    ax1.text(0, 1.1*data.nx, "I_up")
-    ax2.text(0, 1.1*data.nx, "I_dn")
+
+    for i, f in enumerate(fields):
+        ax = fig.add_subplot(len(fields), 1, i + 1)
+        z = getattr(frame, f)
+        if log:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                z = np.log10(z)
+        im = ax.imshow(z.T, aspect=aspect, origin="lower")
+        cb = plt.colorbar(im)
+        cb.ax.set_ylabel(f)
+        cb.ax.yaxis.set_label_coords(-1.7, 0.5)
+
     fig.savefig(filename, bbox_inches="tight")
