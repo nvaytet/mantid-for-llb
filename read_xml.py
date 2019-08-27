@@ -6,7 +6,7 @@
 #
 #   import read_xml
 #   data = read_xml.load(filename="Powder_HoTi_014704.xml")
-#   read_xml.plot(data, filename="Powder_HoTi_014704.pdf")
+#   read_xml.plot(data[0], filename="Powder_HoTi_014704.pdf")
 
 
 import xml.etree.ElementTree as et

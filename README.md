@@ -9,3 +9,11 @@ script.
 
 Note that this is currently very slow, running through all gamma positions
 (frames), and no attempt has been made to speed it up.
+
+## Example of use
+
+```Python
+   import read_xml
+   data = read_xml.load(filename="Powder_HoTi_014704.xml")
+   read_xml.plot(data[0], filename="Powder_HoTi_014704.pdf")
+```
